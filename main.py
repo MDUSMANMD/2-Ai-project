@@ -37,6 +37,9 @@ if "memory" not in st.session_state:
 if "usage" not in st.session_state:
     st.session_state.usage = []
 
+if "results" not in st.session_state:
+    st.session_state.results = {}
+
 # ---------- AI ----------
 def call_ai(prompt):
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -78,54 +81,23 @@ def read_file(file):
         return "\n".join([p.text for p in doc.paragraphs])
 
     elif "image" in file.type:
-        return "User uploaded an image. Describe and analyze it."
+        return "User uploaded an image. Describe it."
 
     else:
         return file.read().decode(errors="ignore")
 
 # ---------- PDF ----------
 def pdf_download(text):
-
     buffer = io.BytesIO()
-
     doc = SimpleDocTemplate(buffer, pagesize=letter)
-
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle(
-        name="Title",
-        parent=styles["Heading1"],
-        alignment=TA_CENTER,
-        spaceAfter=20
-    )
-
-    heading_style = ParagraphStyle(
-        name="Heading",
-        parent=styles["Heading2"],
-        spaceAfter=10
-    )
-
-    body_style = styles["Normal"]
-
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
     elements = []
-
-    elements.append(Paragraph("AI Analysis Report", title_style))
-    elements.append(Spacer(1, 12))
+    elements.append(Paragraph("AI Analysis Report", styles["Heading1"]))
+    elements.append(Spacer(1, 10))
 
     for line in text.split("\n"):
-        line = line.strip()
-
-        if not line:
-            elements.append(Spacer(1, 8))
-            continue
-
-        if line.lower().startswith(("summary", "key points", "insights", "strengths", "weaknesses", "suggestions", "rating")):
-            elements.append(Paragraph(line, heading_style))
-        else:
-            elements.append(Paragraph(line, body_style))
-
+        elements.append(Paragraph(line, styles["Normal"]))
         elements.append(Spacer(1, 6))
 
     doc.build(elements)
@@ -133,65 +105,57 @@ def pdf_download(text):
     return buffer
 
 # ---------- SMART AI ----------
-def memory_chat(module, user_input):
-
-    history = "\n".join(st.session_state.memory[module][-4:])
+def smart_prompt(module, content):
 
     if module == "Career":
-        instruction = """
-Analyze this resume/career document.
+        return f"""
+Analyze this resume.
 
 Give:
-- Rating (out of 5)
+- Rating /5
 - Strengths
 - Weaknesses
 - Improvements
-- Final Suggestions
+- Suggestions
+
+{content}
 """
+
     elif module == "Education":
-        instruction = """
+        return f"""
 Analyze study material.
 
 Give:
 - Summary
-- Key Points
-- Important Questions
+- Key points
+- Important questions
+
+{content}
 """
+
     elif module == "Finance":
-        instruction = """
+        return f"""
 Analyze financial content.
 
 Give:
 - Insights
 - Risks
 - Suggestions
+
+{content}
 """
+
     else:
-        instruction = """
+        return f"""
 Analyze document.
 
 Give:
 - Summary
-- Key Points
+- Key points
 - Improvements
+
+{content}
 """
-
-    prompt = f"""
-{instruction}
-
-Previous Context:
-{history}
-
-User Input:
-{user_input}
-"""
-
-    response = call_ai(prompt)
-
-    st.session_state.memory[module].append(f"User: {user_input}")
-    st.session_state.memory[module].append(f"AI: {response}")
-
-    return response
 
 # ---------- CHAT ----------
 def chatbot(module):
@@ -200,7 +164,7 @@ def chatbot(module):
 
     if st.button("Ask AI"):
         if q:
-            res = memory_chat(module, q)
+            res = call_ai(q)
             st.write(res)
 
 # ============================================================
@@ -214,14 +178,13 @@ if mode == "🎓 Education":
     q = st.text_area("Ask Question")
 
     if st.button("Get Answer"):
-        result = memory_chat("Education", read_file(file) + "\n" + q)
-
-        st.markdown("### 📘 Answer")
-        st.write(result)
-
-        st.download_button("⬇️ Download PDF", pdf_download(result), "Education_Report.pdf")
-
+        result = call_ai(smart_prompt("Education", read_file(file) + "\n" + q))
+        st.session_state.results["Education"] = result
         st.session_state.usage.append("Education")
+
+    if "Education" in st.session_state.results:
+        st.write(st.session_state.results["Education"])
+        st.download_button("Download PDF", pdf_download(st.session_state.results["Education"]))
 
     chatbot("Education")
 
@@ -236,14 +199,13 @@ elif mode == "💼 Career":
     role = st.text_input("Target Role")
 
     if st.button("Analyze"):
-        result = memory_chat("Career", role + "\n" + read_file(file))
-
-        st.markdown("### 💼 Career Analysis")
-        st.write(result)
-
-        st.download_button("⬇️ Download PDF", pdf_download(result), "Career_Report.pdf")
-
+        result = call_ai(smart_prompt("Career", role + "\n" + read_file(file)))
+        st.session_state.results["Career"] = result
         st.session_state.usage.append("Career")
+
+    if "Career" in st.session_state.results:
+        st.write(st.session_state.results["Career"])
+        st.download_button("Download PDF", pdf_download(st.session_state.results["Career"]))
 
     chatbot("Career")
 
@@ -258,14 +220,13 @@ elif mode == "💰 Finance":
     q = st.text_area("Ask Question")
 
     if st.button("Get Advice"):
-        result = memory_chat("Finance", read_file(file) + "\n" + q)
-
-        st.markdown("### 💰 Advice")
-        st.write(result)
-
-        st.download_button("⬇️ Download PDF", pdf_download(result), "Finance_Report.pdf")
-
+        result = call_ai(smart_prompt("Finance", read_file(file) + "\n" + q))
+        st.session_state.results["Finance"] = result
         st.session_state.usage.append("Finance")
+
+    if "Finance" in st.session_state.results:
+        st.write(st.session_state.results["Finance"])
+        st.download_button("Download PDF", pdf_download(st.session_state.results["Finance"]))
 
     chatbot("Finance")
 
@@ -279,14 +240,13 @@ elif mode == "📄 Analyzer":
     file = st.file_uploader("Upload File", type=["pdf","docx","txt","png","jpg"])
 
     if st.button("Analyze"):
-        result = memory_chat("Analyzer", read_file(file))
-
-        st.markdown("### 📊 Analysis Result")
-        st.write(result)
-
-        st.download_button("⬇️ Download PDF", pdf_download(result), "Analysis_Report.pdf")
-
+        result = call_ai(smart_prompt("Analyzer", read_file(file)))
+        st.session_state.results["Analyzer"] = result
         st.session_state.usage.append("Analyzer")
+
+    if "Analyzer" in st.session_state.results:
+        st.write(st.session_state.results["Analyzer"])
+        st.download_button("Download PDF", pdf_download(st.session_state.results["Analyzer"]))
 
     chatbot("Analyzer")
 
@@ -295,18 +255,11 @@ elif mode == "📄 Analyzer":
 # ============================================================
 elif mode == "📊 Dashboard":
 
-    st.header("📊 Advanced Analytics Dashboard")
+    st.header("📊 Dashboard")
 
     if st.session_state.usage:
         df = pd.DataFrame(st.session_state.usage, columns=["Feature"])
-        counts = df["Feature"].value_counts()
-
-        st.bar_chart(counts)
-        st.write(counts)
-        st.metric("Total Usage", len(st.session_state.usage))
-
-    else:
-        st.info("No usage yet")
+        st.bar_chart(df["Feature"].value_counts())
 
 # ============================================================
 # 💬 CHAT ANALYTICS
@@ -320,13 +273,15 @@ elif mode == "💬 Chat Analytics":
 
     if st.session_state.usage:
         df = pd.DataFrame(st.session_state.usage, columns=["Module"])
-        st.bar_chart(df["Module"].value_counts())
+        counts = df["Module"].value_counts()
 
-    for module, chats in st.session_state.memory.items():
-        if chats:
-            st.write(f"### {module}")
-            for msg in chats[-4:]:
-                st.write(msg)
+        st.subheader("Usage Chart")
+        st.bar_chart(counts)
+
+        st.subheader("AI Insights")
+
+        insight = call_ai(f"Give insights for this usage data: {counts.to_dict()}")
+        st.write(insight)
 
 # ---------- FOOTER ----------
 st.markdown("---")
